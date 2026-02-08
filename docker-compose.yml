@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # SQL Server Database
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: neoris-sqlserver
+    ports:
+      - "1433:1433"
+    networks:
+      - neoris-network
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=Neoris2026!
+      - MSSQL_PID=Developer
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+      - ./sql-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Neoris2026! -C -Q "SELECT 1" || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Database Initializer (runs once)
+  sqlserver-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: neoris-sqlserver-init
+    networks:
+      - neoris-network
+    environment:
+      - SA_PASSWORD=Neoris2026!
+    volumes:
+      - ./sql-scripts:/scripts
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    command: >
+      /bin/bash -c "
+      echo 'Esperando a que SQL Server esté completamente listo...';
+      sleep 10;
+      echo 'Ejecutando script de inicialización...';
+      /opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -P Neoris2026! -C -d master -i /scripts/init.sql;
+      if [ $$? -eq 0 ]; then
+        echo '✅ Base de datos inicializada correctamente';
+      else
+        echo '❌ Error al inicializar la base de datos';
+        exit 1;
+      fi
+      "
+    restart: "no"
+
+
+
+networks:
+  neoris-network:
+    driver: bridge
+
+volumes:
+  sqlserver-data:
+    driver: local
